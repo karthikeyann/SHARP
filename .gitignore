@@ -1,2 +1,3 @@
 *.lnk
 ESP8266/logs/*
+ESP8266/include/credentials.h
