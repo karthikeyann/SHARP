@@ -300,9 +300,10 @@ int CommandProcessor(String str, char source) {
 		Serial.println("  switch - switch to the other rom and reboot");
 		Serial.println("  ota - perform ota update, switch rom and reboot");
 		Serial.println("  rom - print currently running rom id");
+		Serial.println("  version - print version and firmware compiled time");
 		Serial.println("  info - show esp8266 info");
 		Serial.println();
-		printTo( "Available commands\r\nconnect, ip, rom, ota, switch, restart, OFF ##, ON ##, help", source);
+		printTo( "Available commands\r\nconnect, ip, rom, version, ota, switch, restart, OFF ##, ON ##, help", source);
 	} else {
 		printTo("unknown command", source);
 		return 0;
