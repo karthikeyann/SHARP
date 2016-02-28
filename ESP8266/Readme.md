@@ -28,6 +28,8 @@ For debugging, you can connect directly to serial port and send commands.
 - Commands upgrade (ESP8266))
 - Upload Android App code 
 - Design Front end web UI.
+- ESP8266 Tutorials good in https://primalcortex.wordpress.com
+- Use above link to do SPIFF in ESP8266.
 
 
 rBoot Sming   
