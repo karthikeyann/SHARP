@@ -274,15 +274,38 @@ int CommandProcessor(String str, char source) {
 		//connected mqtt server status
 		//currently running rom #
 		//Relay status
-	} else if (str.startsWith("OFF ")) {
-		Serial.println("--LED " + str.substring(4)+" OFF");
-		printTo( "--LED " + str.substring(4)+" OFF", source);
-	} else if (str.startsWith("ON ")) {
-		Serial.println("--LED " + str.substring(3)+" ON");
-		printTo( "--LED " + str.substring(3)+" ON" , source);
-	} else if (str.startsWith("TOGGLE ")) {
-		Serial.println("--LED " + str.substring(7)+" TOGGLE");
-		printTo( "--LED " + str.substring(7)+" ON" , source);
+	} else if (str.startsWith("OFF ") || str.startsWith("ON ") || str.startsWith("TOGGLE ") || str.startsWith("STATUS ")) {
+		char devno= 0x00;
+		char cmd = 0x00;
+		String opr = "";
+		if (str.startsWith("OFF ")) {
+			cmd = 0x00;
+			opr = str.substring(4);
+		} else if (str.startsWith("ON ")) {
+			cmd = 0x10;
+			opr = str.substring(3);
+		} else if (str.startsWith("TOGGLE ")) {
+			cmd = 0x20;
+			opr = str.substring(7);
+		} else if (str.startsWith("STATUS ")) {
+			cmd = 0x30;
+			opr = str.substring(7);
+		}
+		if(opr == "ALL") {
+			devno = cmd>>4;
+			cmd = 0x40;
+		} else {
+			devno = str.toInt();
+		}
+		Serial.println(cmd|devno);
+		//TODO wait for response.
+	} else if (str == "PING") {
+		char cmd = 0x81;
+		Serial.println(cmd);
+		//TODO wait for response
+	} else if (str == "RESET") {
+		//TODO
+		char cmd = 0x82;
 	} else if (str == "version") {
 		printTo("V1.0", source);
 		//printTo("V1.1", source);
@@ -303,13 +326,40 @@ int CommandProcessor(String str, char source) {
 		Serial.println("  version - print version and firmware compiled time");
 		Serial.println("  info - show esp8266 info");
 		Serial.println();
-		printTo( "Available commands\r\nconnect, ip, rom, version, ota, switch, restart, OFF ##, ON ##, help", source);
+		printTo( "Available commands\r\nconnect, ip, rom, version, ota, switch, restart, OFF ##, ON ##, TOGGLE ##, STATUS ##, PING, help", source);
 	} else {
 		printTo("unknown command", source);
 		return 0;
 	}
 	return 1;
 }
+
+int serialCommandProcessor(String str, char source) {
+	if (str == "RDY") {
+		Serial.println(0x81);
+	}
+	// REPONSE
+	if ( str.length() == 2 ) {
+		if(str == "OK") {
+			mqtt.publish( DEVICE_NAME + "/response", "OK");
+		} else if (str == "ER") {
+			mqtt.publish( DEVICE_NAME + "/response", "ERROR");
+		} else if (str == "00") {
+			mqtt.publish( DEVICE_NAME + "/response", "STATUS=0");
+		} else if (str == "01") {
+			mqtt.publish( DEVICE_NAME + "/response", "STATUS=1");
+		} else {
+			//unknown response from Arduino
+			mqtt.publish( DEVICE_NAME + "/response", "Unknown command from Arduino:"+str);
+		}
+	}
+	//STATUS ALL.
+	else if (str.length() == 4) {
+		mqtt.publish( DEVICE_NAME + "/response", "STATUS_ALL="+str);
+	}
+}
+
+
 
 void serialCallBack(Stream& stream, char arrivedChar, unsigned short availableCharsCount) {
 
@@ -320,13 +370,13 @@ void serialCallBack(Stream& stream, char arrivedChar, unsigned short availableCh
 		int done=0;
 		for (int i = 0; i < availableCharsCount; i++) {
 			c = (char) stream.read();
-			if (c == '\r' || c == '\n') {
+			if (c == '\n') {
 				done=1;
 			}
 			if(!done)
 				str += c;
 		}
-		CommandProcessor(str, SERIAL);
+		serialCommandProcessor(str, SERIAL);
 	}
 }
 
