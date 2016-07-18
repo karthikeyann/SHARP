@@ -1,0 +1,2 @@
+Multiple Wifi router connectivity on fail - Search and join.
+separate power supply for Relays done.

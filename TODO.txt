@@ -1,0 +1,33 @@
+Remove all SSID password before checkin.
+More commands on Arduino.
+--TOGGLE ALL, --STATUS ##, --STATUS ALL
+TOGGLE ALL, ON ALL, OFF ALL in ESP8266
+Ready signal from Arduino to ESP
+ping signal from ESP and ACK from Arduino. (wait and retry 3 times, then report Arduino non reponsive).
+Command execute and acknowlege on response.
+Sniff what ESP is continuously talking with Arduino. (power wastage?).
+
+
+ESP:
+ping for ESP.
+Diagnostics code. (ping to Arduino, check all status of Relays.).
+If Arduino does not ack on commands, ping and then ack in MQTT.
+Websocket code.
+Reset Arduino by ESP - use GPIO. (find default value on powerup of ESP).
+
+
+Android code:
+Diagnostics run.
+Get status of all relays.
+See full log on MQTT channel.
+Websocket code.
+
+
+Circuit:
+Fix loose connections in AC 12V connection to board.
+May be a flat new female connector.
+LDR solder.
+
+For relay optocoupler separation!!!
+100K + optocoupler for 240V detection?!!!
+Double optocoupler separation for 240V to DC12V(Relay) to DC5V(MCU)!!!?
