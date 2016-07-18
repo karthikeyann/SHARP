@@ -19,6 +19,7 @@ bool debug_mode = false;
 // DEVICE_NAME/response
 // DEVICE_NAME/status
 // main/status
+// main/log
 
 // Forward declarations
 void startMqttClient();
@@ -30,11 +31,11 @@ Timer procTimer;
 // For quickly check you can use: http://www.hivemq.com/demos/websocket-client/ (Connection= test.mosquitto.org:8080)
 MqttClient mqtt(MQTT_SERVER, MQTT_PORT, onMessageReceived);
 
-void printTo(String str, char source) {
-	if(source==SERIAL || debug_mode) {
+void printTo(const String str, char source) {
+	if((source&SERIAL)==SERIAL || debug_mode) {
 		Serial.println(str);
 	}
-	if (source==MQTT) {
+	if ((source&MQTT)==MQTT) {
 		mqtt.publish( DEVICE_NAME + "/response", str);
 	}
 }
@@ -46,7 +47,7 @@ void keepMQTTConnected()
 }
 
 // Publish our message
-void publishMessage()
+void publishStartMessage()
 {
 	//TODO put a for loop 10 times try and until connected.
 	keepMQTTConnected();
@@ -89,7 +90,7 @@ void startMqttClient()
 }
 
 // Will be called when WiFi station was connected to AP
-void connectOk()
+void wifiConnectOk()
 {
 	Serial.println("I'm CONNECTED");
 
@@ -97,23 +98,23 @@ void connectOk()
 	startMqttClient();
 
 	// Start publishing loop
-	publishMessage();
+	publishStartMessage();
 	procTimer.initializeMs(20 * 1000, keepMQTTConnected).start(); // every 20 seconds
 }
 
-void listNetworks(bool succeeded, BssList list);
+void listWifiNetworks(bool succeeded, BssList list);
 // Will be called when WiFi station timeout was reached
-void connectFail()
+void wifiConnectFail()
 {
 	Serial.println("MQTT is NOT CONNECTED. Need help :(");
 
 	// .. some you code for device configuration ..
 	// Print available access points
-	WifiStation.startScan(listNetworks); // In Sming we can start network scan from init method without additional code
+	WifiStation.startScan(listWifiNetworks); // In Sming we can start network scan from init method without additional code
 }
 
 // Will be called when WiFi station network scan was completed
-void listNetworks(bool succeeded, BssList list)
+void listWifiNetworks(bool succeeded, BssList list)
 {
 	if (!succeeded)
 	{
@@ -136,47 +137,46 @@ void listNetworks(bool succeeded, BssList list)
 				WifiStation.config(WIFI_SSIDS[w], WIFI_PASSD[w]);
 				WifiStation.enable(true);
 				Serial.println("Connecting to " + list[i].ssid);
-				WifiStation.waitConnection(connectOk, 20, connectFail); // We recommend 20+ seconds for connection timeout at start
+				WifiStation.waitConnection(wifiConnectOk, 20, wifiConnectFail); // We recommend 20+ seconds for connection timeout at start
 				return;
 			}
 		}
 	}
 }
 
-
 rBootHttpUpdate* otaUpdater = 0;
 
 void OtaUpdate_CallBack(bool result) {
-	
-	Serial.println("In callback...");
+
+	printTo("In callback...", SERIAL);
 	if(result == true) {
 		// success
 		uint8 slot;
 		slot = rboot_get_current_rom();
 		if (slot == 0) slot = 1; else slot = 0;
 		// set to boot new rom and then reboot
-		Serial.printf("Firmware updated, rebooting to rom %d...\r\n", slot);
-		mqtt.publish( DEVICE_NAME + "/response", "Firmware updated, rebooting to rom " + String(slot));
+		printTo("Firmware updated, rebooting to rom " + String(slot), SERIAL);
+		printTo("Firmware updated, rebooting to rom " + String(slot), MQTT);
 		rboot_set_current_rom(slot);
 		System.restart();
 	} else {
 		// fail
-		Serial.println("Firmware update failed!");
-		mqtt.publish( DEVICE_NAME + "/response", "Firmware update failed!");
+		printTo("Firmware update failed!", SERIAL);
+		printTo("Firmware update failed!", MQTT);
 	}
 }
 
 void OtaUpdate(String URL="") {
-	
+
 	uint8 slot;
 	rboot_config bootconf;
-	
+
 	Serial.println("Updating...");
-	
+
 	// need a clean object, otherwise if run before and failed will not run again
 	if (otaUpdater) delete otaUpdater;
 	otaUpdater = new rBootHttpUpdate();
-	
+
 	// select rom slot to flash
 	bootconf = rboot_get_config();
 	slot = bootconf.current_rom;
@@ -201,11 +201,10 @@ void OtaUpdate(String URL="") {
 			URL = URL + "/rom1.bin";
 	}
 #endif
-	Serial.printf("update URL: %s\r\n", URL);
-	mqtt.publish( DEVICE_NAME + "/response", "update URL: " + URL);
+	printTo("update URL: " + URL, SERIAL|MQTT);
 	// flash rom to position indicated in the rBoot config rom table
 	otaUpdater->addItem(bootconf.roms[slot], URL);
-	
+
 #ifndef DISABLE_SPIFFS
 	// use user supplied values (defaults for 4mb flash in makefile)
 	if (slot == 0) {
@@ -228,11 +227,11 @@ void Switch() {
 	uint8 before, after;
 	before = rboot_get_current_rom();
 	if (before == 0) after = 1; else after = 0;
-	Serial.printf("Swapping from rom %d to rom %d.\r\n", before, after);
-	mqtt.publish( DEVICE_NAME + "/response", "Swapping from rom " + String(before) + " to rom " + String(after));
+	printTo("Swapping from rom " + String(before) + " to rom " + String(after), SERIAL);
+	printTo("Swapping from rom " + String(before) + " to rom " + String(after), MQTT);
 	rboot_set_current_rom(after);
-	Serial.println("Restarting...\r\n");
-	mqtt.publish( DEVICE_NAME + "/response", "Restarting...");
+	printTo("Restarting...\r\n", SERIAL);
+	printTo("Restarting...\r\n", MQTT);
 	//TODO wait for sometime before restart to know that publish succeeded.
 	System.restart();
 }
@@ -249,19 +248,22 @@ void ShowInfo() {
 int CommandProcessor(String str, char source) {
 	if (str == "debug on") {
 		debug_mode = true;
+		printTo( "debug on", source);
 	} else if (str == "debug off") {
 		debug_mode = false;
+		printTo( "debug off", source);
 	} else if (str == "connect") {
 		// connect to wifi
 		WifiStation.config(WIFI_SSID, WIFI_PASS);
 		WifiStation.enable(true);
-		WifiStation.waitConnection(connectOk, 20, connectFail); // We recommend 20+ seconds for connection timeout at start
+		WifiStation.waitConnection(wifiConnectOk, 20, wifiConnectFail); // We recommend 20+ seconds for connection timeout at start
 	} else if (str == "ip") {
 			//Serial.printf("ip: %s mac: %s\r\n", WifiStation.getIP().toString().c_str(), WifiStation.getMAC().c_str());
 			printTo( "ip: " + WifiStation.getIP().toString() + " mac: " + WifiStation.getMAC(), source);
 	} else if (str == "rom") {
 			printTo( "Currently running rom " + String(rboot_get_current_rom()), source );
 	} else if (str.startsWith("ota ")) {
+		printTo( "Stating OTA update", source);
 		OtaUpdate(str.substring(4));
 	} else if (str == "ota") {
 		OtaUpdate("");
@@ -275,41 +277,10 @@ int CommandProcessor(String str, char source) {
 		//currently running rom #
 		//Relay status
 	} else if (str.startsWith("OFF ") || str.startsWith("ON ") || str.startsWith("TOGGLE ") || str.startsWith("STATUS ")) {
-		char devno= 0x00;
-		char cmd = 0x00;
-		String opr = "";
-		if (str.startsWith("OFF ")) {
-			cmd = 0x00;
-			opr = str.substring(4);
-		} else if (str.startsWith("ON ")) {
-			cmd = 0x10;
-			opr = str.substring(3);
-		} else if (str.startsWith("TOGGLE ")) {
-			cmd = 0x20;
-			opr = str.substring(7);
-		} else if (str.startsWith("STATUS ")) {
-			cmd = 0x30;
-			opr = str.substring(7);
-		}
-		if(opr == "ALL") {
-			devno = cmd>>4;
-			cmd = 0x40;
-		} else {
-			devno = str.toInt();
-		}
-		Serial.println(cmd|devno);
-		//TODO wait for response.
-	} else if (str == "PING") {
-		char cmd = 0x81;
-		Serial.println(cmd);
-		//TODO wait for response
-	} else if (str == "RESET") {
-		//TODO
-		char cmd = 0x82;
+		printTo("Switching devices.", source);
+		//TODO implement GPIO
 	} else if (str == "version") {
-		printTo("V1.0", source);
-		//printTo("V1.1", source);
-		//printTo("V1.2", source);
+		printTo("V1.1", source);
 		printTo(" Dated "+ String(__DATE__) + " Timed " + String(__TIME__), source);
 	}  else if (str == "info") {
 		ShowInfo();
@@ -335,31 +306,8 @@ int CommandProcessor(String str, char source) {
 }
 
 int serialCommandProcessor(String str, char source) {
-	if (str == "RDY") {
-		Serial.println(0x81);
-	}
-	// REPONSE
-	if ( str.length() == 2 ) {
-		if(str == "OK") {
-			mqtt.publish( DEVICE_NAME + "/response", "OK");
-		} else if (str == "ER") {
-			mqtt.publish( DEVICE_NAME + "/response", "ERROR");
-		} else if (str == "00") {
-			mqtt.publish( DEVICE_NAME + "/response", "STATUS=0");
-		} else if (str == "01") {
-			mqtt.publish( DEVICE_NAME + "/response", "STATUS=1");
-		} else {
-			//unknown response from Arduino
-			mqtt.publish( DEVICE_NAME + "/response", "Unknown command from Arduino:"+str);
-		}
-	}
-	//STATUS ALL.
-	else if (str.length() == 4) {
-		mqtt.publish( DEVICE_NAME + "/response", "STATUS_ALL="+str);
-	}
+	return CommandProcessor( str, source);
 }
-
-
 
 void serialCallBack(Stream& stream, char arrivedChar, unsigned short availableCharsCount) {
 
@@ -397,5 +345,5 @@ void init() {
 	Serial.setCallback(serialCallBack);
 
 	// Run our method when station was connected to AP (or not connected)
-	WifiStation.waitConnection(connectOk, 10, connectFail); // We recommend 20+ seconds for connection timeout at start
+	WifiStation.waitConnection(wifiConnectOk, 10, wifiConnectFail); // We recommend 20+ seconds for connection timeout at start
 }
