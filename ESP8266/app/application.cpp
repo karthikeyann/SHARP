@@ -1,16 +1,12 @@
 #include <user_config.h>
 #include <SmingCore/SmingCore.h>
 #include <credentials.h>
-
-template<typename T, size_t N>
-size_t size(T (&ra)[N]) {
-    return N;
-}
+#include "common_functions.h"
 
 bool debug_mode = false;
 
-#define SERIAL 1
-#define MQTT   2
+//MQTT SSL
+#define ENABLE_SSL
 
 // Listen topics
 // DEVICE_NAME/command
@@ -82,7 +78,17 @@ void onMessageReceived(String topic, String message)
 // Run MQTT client
 void startMqttClient()
 {
-	mqtt.connect("esp8266", DEVICE_NAME, DEVICE_PASS);
+	mqtt.connect("esp8266", DEVICE_NAME, DEVICE_PASS, true);
+#ifdef ENABLE_SSL
+	//mqtt.addSslOptions(SSL_SERVER_VERIFY_LATER);
+
+	#include <ssl/private_key.h>
+	#include <ssl/cert.h>
+
+	mqtt.setSslClientKeyCert(default_private_key, default_private_key_len,
+							  default_certificate, default_certificate_len, NULL, true);
+
+#endif
 	mqtt.subscribe(DEVICE_NAME + "/command");
 	mqtt.subscribe("main/command");
 	//mqtt.subscribe("main/status/#");
@@ -144,97 +150,11 @@ void listWifiNetworks(bool succeeded, BssList list)
 	}
 }
 
-rBootHttpUpdate* otaUpdater = 0;
-
-void OtaUpdate_CallBack(bool result) {
-
-	printTo("In callback...", SERIAL);
-	if(result == true) {
-		// success
-		uint8 slot;
-		slot = rboot_get_current_rom();
-		if (slot == 0) slot = 1; else slot = 0;
-		// set to boot new rom and then reboot
-		printTo("Firmware updated, rebooting to rom " + String(slot), SERIAL);
-		printTo("Firmware updated, rebooting to rom " + String(slot), MQTT);
-		rboot_set_current_rom(slot);
-		System.restart();
-	} else {
-		// fail
-		printTo("Firmware update failed!", SERIAL);
-		printTo("Firmware update failed!", MQTT);
-	}
-}
-
-void OtaUpdate(String URL="") {
-
-	uint8 slot;
-	rboot_config bootconf;
-
-	Serial.println("Updating...");
-
-	// need a clean object, otherwise if run before and failed will not run again
-	if (otaUpdater) delete otaUpdater;
-	otaUpdater = new rBootHttpUpdate();
-
-	// select rom slot to flash
-	bootconf = rboot_get_config();
-	slot = bootconf.current_rom;
-	if (slot == 0) slot = 1; else slot = 0;
-
-#ifndef RBOOT_TWO_ROMS
-	if (URL == "")
-		URL = ROM_0_URL;
-	else
-		URL = URL + "/rom0.bin";
-#else
-	// flash appropriate rom
-	if (slot == 0) {
-		if (URL == "")
-			URL = ROM_0_URL;
-		else
-			URL = URL + "/rom0.bin";
-	} else {
-		if (URL == "")
-			URL = ROM_1_URL;
-		else
-			URL = URL + "/rom1.bin";
-	}
-#endif
-	printTo("update URL: " + URL, SERIAL|MQTT);
-	// flash rom to position indicated in the rBoot config rom table
-	otaUpdater->addItem(bootconf.roms[slot], URL);
-
-#ifndef DISABLE_SPIFFS
-	// use user supplied values (defaults for 4mb flash in makefile)
-	if (slot == 0) {
-		otaUpdater->addItem(RBOOT_SPIFFS_0, SPIFFS_URL);
-	} else {
-		otaUpdater->addItem(RBOOT_SPIFFS_1, SPIFFS_URL);
-	}
-#endif
-
-	// request switch and reboot on success
-	//otaUpdater->switchToRom(slot);
-	// and/or set a callback (called on failure or success without switching requested)
-	otaUpdater->setCallback(OtaUpdate_CallBack);
-
-	// start update
-	otaUpdater->start();
-}
-
-void Switch() {
-	uint8 before, after;
-	before = rboot_get_current_rom();
-	if (before == 0) after = 1; else after = 0;
-	printTo("Swapping from rom " + String(before) + " to rom " + String(after), SERIAL);
-	printTo("Swapping from rom " + String(before) + " to rom " + String(after), MQTT);
-	rboot_set_current_rom(after);
-	printTo("Restarting...\r\n", SERIAL);
-	printTo("Restarting...\r\n", MQTT);
-	//TODO wait for sometime before restart to know that publish succeeded.
-	System.restart();
-}
+// OTA functions
+void OtaUpdate_CallBack(bool result) ;
+void OtaUpdate(String URL) ;
+void Switch() ;
+//
 
 void ShowInfo() {
     Serial.printf("\r\nSDK: v%s\r\n", system_get_sdk_version());
@@ -321,7 +241,7 @@ void serialCallBack(Stream& stream, char arrivedChar, unsigned short availableCh
 			if (c == '\n') {
 				done=1;
 			}
-			if(!done)
+			if(!done && c!='\n' && c!='\r')
 				str += c;
 		}
 		serialCommandProcessor(str, SERIAL);
@@ -338,6 +258,8 @@ void init() {
 	WifiAccessPoint.enable(false);
 	//WifiAccessPoint.config("Sming InternetOfThings", "", AUTH_OPEN);
 	
+	init_relays ();
+
 	Serial.printf("\r\nCurrently running rom %d.\r\n", slot);
 	Serial.println("Type 'help' and press enter for instructions.");
 	Serial.println();

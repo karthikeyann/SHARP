@@ -3,6 +3,7 @@
 	<name>ESP8266</name>
 	<comment></comment>
 	<projects>
+		<project>Sming</project>
 	</projects>
 	<buildSpec>
 		<buildCommand>
